@@ -5,7 +5,7 @@ import pytesseract
 from PIL import Image
 from dotenv import load_dotenv
 import spacy
-import requests
+from groq import Groq
 
 load_dotenv()
 
@@ -13,8 +13,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 nlp = spacy.load("en_core_web_sm")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 def extract_text_from_image(image_path: str) -> str:
@@ -68,9 +67,9 @@ def assign_coordinates(nodes: list) -> list:
     return nodes
 
 
-def call_gemini(text: str) -> dict:
-    if not GEMINI_API_KEY:
-        return {"explanation": "Gemini API key not set.", "quiz": []}
+def call_llm(text: str) -> dict:
+    if not os.getenv("GROQ_API_KEY"):
+        return {"explanation": "Groq API key not set.", "quiz": []}
 
     prompt = f"""You are an educational AI. Given this text extracted from a research diagram:
 
@@ -82,22 +81,18 @@ Return a JSON object with exactly these two keys:
 
 Return only valid JSON. No markdown, no extra text."""
 
-    headers = {"Content-Type": "application/json"}
-    body = {"contents": [{"parts": [{"text": prompt}]}]}
-
     try:
-        res = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-            headers=headers,
-            json=body,
-            timeout=30
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=1000
         )
-        raw = res.json()
-        content = raw["candidates"][0]["content"]["parts"][0]["text"]
-        content = content.strip().strip("```json").strip("```").strip()
+        content = response.choices[0].message.content.strip()
+        content = content.strip("```json").strip("```").strip()
         return json.loads(content)
     except Exception as e:
-        return {"explanation": f"Gemini call failed: {str(e)}", "quiz": []}
+        return {"explanation": f"LLM call failed: {str(e)}", "quiz": []}
 
 
 def run_pipeline(image_path: str) -> dict:
@@ -109,13 +104,13 @@ def run_pipeline(image_path: str) -> dict:
     graph = extract_entities_and_relations(text)
     graph["nodes"] = assign_coordinates(graph["nodes"])
 
-    gemini_output = call_gemini(text)
+    llm_output = call_llm(text)
 
     return {
         "nodes": graph["nodes"],
         "edges": graph["edges"],
-        "explanation": gemini_output.get("explanation", ""),
-        "quiz": gemini_output.get("quiz", [])
+        "explanation": llm_output.get("explanation", ""),
+        "quiz": llm_output.get("quiz", [])
     }
 
 

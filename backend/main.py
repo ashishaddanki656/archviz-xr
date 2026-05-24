@@ -3,9 +3,11 @@ import sys
 import uuid
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.params import Body
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import motor.motor_asyncio
+from groq import Groq
 
 load_dotenv()
 
@@ -22,8 +24,10 @@ app.add_middleware(
 )
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/archviz")
-client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
-db = client.archviz
+client_db = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
+db = client_db.archviz
+
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 class VoiceQuery(BaseModel):
@@ -53,11 +57,14 @@ async def analyze(file: UploadFile = File(...)):
         result = run_pipeline(temp_path)
         result["session_id"] = session_id
 
-        await db.sessions.insert_one({
-            "_id": session_id,
-            "filename": file.filename,
-            "result": result
-        })
+        try:
+            await db.sessions.insert_one({
+                "_id": session_id,
+                "filename": file.filename,
+                "result": result
+            })
+        except Exception:
+            pass
 
         return result
 
@@ -68,15 +75,11 @@ async def analyze(file: UploadFile = File(...)):
 
 @app.post("/voice-query")
 async def voice_query(body: VoiceQuery):
-    import requests
-
     session = await db.sessions.find_one({"_id": body.session_id})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
     context = session["result"].get("explanation", "")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
     prompt = f"""You are an AR education assistant explaining a research diagram.
 
@@ -86,18 +89,14 @@ User question: {body.question}
 
 Answer in 2-3 sentences, simply and clearly."""
 
-    headers = {"Content-Type": "application/json"}
-    body_data = {"contents": [{"parts": [{"text": prompt}]}]}
-
     try:
-        res = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-            headers=headers,
-            json=body_data,
-            timeout=30
+        response = groq_client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300
         )
-        raw = res.json()
-        answer = raw["candidates"][0]["content"]["parts"][0]["text"]
+        answer = response.choices[0].message.content
         return {"answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -105,7 +104,7 @@ Answer in 2-3 sentences, simply and clearly."""
 
 @app.get("/session/{session_id}")
 async def get_session(session_id: str):
-    session = await db.sessions.find_one({"_id": session_id})
+    session = await db.sessions.find_one({"_id": Body.session_id})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     session.pop("_id", None)
