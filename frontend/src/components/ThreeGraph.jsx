@@ -10,27 +10,22 @@ export default function ThreeGraph({ data }) {
     const width = mountRef.current.clientWidth;
     const height = 400;
 
-    // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0f0f1a);
 
-    // Camera
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100);
     camera.position.set(0, 0, 5);
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     mountRef.current.appendChild(renderer.domElement);
 
-    // Lighting
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambient);
     const pointLight = new THREE.PointLight(0x7c6ff7, 2, 20);
     pointLight.position.set(2, 2, 2);
     scene.add(pointLight);
 
-    // Draw nodes
     const nodeMap = {};
     data.nodes.forEach((node) => {
       const geo = new THREE.SphereGeometry(0.18, 32, 32);
@@ -41,9 +36,8 @@ export default function ThreeGraph({ data }) {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(node.x * 1.5, node.y * 1.5, node.z * 1.5);
       scene.add(mesh);
-      nodeMap[node.id] = mesh.position;
+      nodeMap[node.id] = mesh.position.clone();
 
-      // Label as small sprite
       const canvas = document.createElement("canvas");
       canvas.width = 256;
       canvas.height = 64;
@@ -62,7 +56,6 @@ export default function ThreeGraph({ data }) {
       scene.add(sprite);
     });
 
-    // Draw edges
     data.edges.forEach((edge) => {
       const from = nodeMap[edge.from];
       const to = nodeMap[edge.to];
@@ -74,9 +67,9 @@ export default function ThreeGraph({ data }) {
       scene.add(line);
     });
 
-    // Mouse rotation
     let isDragging = false;
     let prevMouse = { x: 0, y: 0 };
+    let rotY = 0;
 
     const onMouseDown = (e) => {
       isDragging = true;
@@ -88,9 +81,8 @@ export default function ThreeGraph({ data }) {
     const onMouseMove = (e) => {
       if (!isDragging) return;
       const dx = e.clientX - prevMouse.x;
-      const dy = e.clientY - prevMouse.y;
       scene.rotation.y += dx * 0.01;
-      scene.rotation.x += dy * 0.01;
+      rotY = scene.rotation.y;
       prevMouse = { x: e.clientX, y: e.clientY };
     };
 
@@ -98,11 +90,13 @@ export default function ThreeGraph({ data }) {
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousemove", onMouseMove);
 
-    // Animation loop
     let animId;
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      if (!isDragging) scene.rotation.y += 0.003;
+      if (!isDragging) {
+        rotY += 0.005;
+        scene.rotation.y = rotY;
+      }
       renderer.render(scene, camera);
     };
     animate();
@@ -117,6 +111,7 @@ export default function ThreeGraph({ data }) {
         mountRef.current &&
         renderer.domElement.parentNode === mountRef.current
       ) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         mountRef.current.removeChild(renderer.domElement);
       }
     };

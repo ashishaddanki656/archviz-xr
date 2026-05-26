@@ -75,11 +75,17 @@ async def analyze(file: UploadFile = File(...)):
 
 @app.post("/voice-query")
 async def voice_query(body: VoiceQuery):
-    session = await db.sessions.find_one({"_id": body.session_id})
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    context = ""
+    
+    try:
+        session = await db.sessions.find_one({"_id": body.session_id})
+        if session:
+            context = session["result"].get("explanation", "")
+    except Exception:
+        pass
 
-    context = session["result"].get("explanation", "")
+    if not context:
+        context = "A research diagram showing interconnected components and their relationships."
 
     prompt = f"""You are an AR education assistant explaining a research diagram.
 
@@ -91,7 +97,7 @@ Answer in 2-3 sentences, simply and clearly."""
 
     try:
         response = groq_client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=300
@@ -100,12 +106,3 @@ Answer in 2-3 sentences, simply and clearly."""
         return {"answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/session/{session_id}")
-async def get_session(session_id: str):
-    session = await db.sessions.find_one({"_id": Body.session_id})
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    session.pop("_id", None)
-    return session

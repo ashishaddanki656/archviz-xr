@@ -4,6 +4,7 @@ import Pipeline from "./components/Pipeline";
 import Quiz from "./components/Quiz";
 import Viewer from "./components/Viewer";
 import ThreeGraph from "./components/ThreeGraph";
+import VoiceQA from "./components/VoiceQA";
 import "./App.css";
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
         <>
           <Pipeline data={sessionData} />
           <ThreeGraph data={sessionData} />
+          <VoiceQA sessionId={sessionData.session_id} />
           <Viewer data={sessionData} />
           <Quiz questions={sessionData.quiz} />
           <button
